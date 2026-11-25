@@ -15,6 +15,10 @@
 #define PRESSURE_MAX_MPA        1.6f
 #define VOLTAGE_DIVIDER_RATIO   1.5f
 
+static float adc_voltage;
+static float sensor_voltage;
+static float pressure_mpa;
+
 //I2C Config
 #define I2C_MASTER_SCL_IO       22
 #define I2C_MASTER_SDA_IO       21
@@ -27,7 +31,6 @@
 #define ADS1115_REG_CONFIG      0x01
 
 static const char *TAG = "ADS1115";
-
 static i2c_master_bus_handle_t bus_handle;
 static i2c_master_dev_handle_t ads_handle;
 
@@ -156,15 +159,10 @@ float pressure_sensor_get_mpa(float sensor_voltage)
             * PRESSURE_MAX_MPA;
 }
 
-void app_main(void)
+
+//RTOS Tasks
+void sensor_task(void *pvParameters)
 {
-    i2c_master_init();
-    ads1115_init();
-
-    float adc_voltage;
-    float sensor_voltage;
-    float pressure_mpa;
-
     while (1)
     {
         esp_err_t ret = ads1115_read_voltage(&adc_voltage);
@@ -172,17 +170,7 @@ void app_main(void)
         if (ret == ESP_OK)
         {
             sensor_voltage = pressure_sensor_get_voltage(adc_voltage);      // Compensate for voltage divider
-         
             pressure_mpa = pressure_sensor_get_mpa(sensor_voltage);         // Convert to pressure
-
-            // Print measurements
-            ESP_LOGI(
-                TAG,
-                "ADC: %.3f V | Sensor: %.3f V | Pressure: %.3f MPa",
-                adc_voltage,
-                sensor_voltage,
-                pressure_mpa
-            );
         }
         else
         {
@@ -191,4 +179,44 @@ void app_main(void)
 
         vTaskDelay(pdMS_TO_TICKS(100));
     }
+}
+
+void print_data_task(void *pvParameters)
+{
+    while (1)
+    {
+        ESP_LOGI(
+            TAG,
+            "ADC: %.3f V | Sensor: %.3f V | Pressure: %.3f MPa",
+            adc_voltage,
+            sensor_voltage,
+            pressure_mpa
+        );
+
+        vTaskDelay(pdMS_TO_TICKS(200));
+    }
+}
+
+void app_main(void)
+{
+    i2c_master_init();
+    ads1115_init();
+
+    xTaskCreate(
+        sensor_task,
+        "sensor_task",
+        4096,
+        NULL,
+        5,
+        NULL
+    );
+
+    xTaskCreate(
+        print_data_task,
+        "print_data_task",
+        4096,
+        NULL,
+        5,
+        NULL
+    );
 }
